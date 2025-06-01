@@ -35,6 +35,52 @@ def load_data():
 
 full_orders_df, full_products_df, full_reviews_df = load_data()
 
+st.sidebar.header("🔎 Filter Data")
+min_date = full_orders_df['order_purchase_timestamp'].min().date()
+max_date = full_orders_df['order_purchase_timestamp'].max().date()
+date_range = st.sidebar.date_input(
+    "Pilih Rentang Tanggal Order",
+    value=(min_date, max_date),
+    min_value=min_date,
+    max_value=max_date
+)
+
+if isinstance(date_range, tuple) and len(date_range) == 2:
+    start_date, end_date = date_range
+    # Filter orders
+    filtered_orders_df = full_orders_df[
+        (full_orders_df['order_purchase_timestamp'].dt.date >= start_date) &
+        (full_orders_df['order_purchase_timestamp'].dt.date <= end_date)
+    ]
+    # Filter products & reviews berdasarkan order_id yang lolos filter
+    filtered_products_df = full_products_df[full_products_df['order_id'].isin(
+        filtered_orders_df['order_id'])]
+    filtered_reviews_df = full_reviews_df[full_reviews_df['order_id'].isin(
+        filtered_orders_df['order_id'])]
+else:
+    filtered_orders_df = full_orders_df
+    filtered_products_df = full_products_df
+    filtered_reviews_df = full_reviews_df
+
+# --- FITUR INTERAKTIF: FILTER KATEGORI PRODUK ---
+all_categories = filtered_products_df['product_category_name_english'].dropna(
+).unique()
+selected_categories = st.sidebar.multiselect(
+    "Pilih Kategori Produk (opsional, bisa lebih dari satu):",
+    options=sorted(all_categories),
+    default=sorted(all_categories)  # default: semua kategori
+)
+
+if selected_categories:
+    filtered_products_df = filtered_products_df[filtered_products_df['product_category_name_english'].isin(
+        selected_categories)]
+    # Filter reviews & orders berdasarkan order_id produk yang lolos filter kategori
+    filtered_order_ids = filtered_products_df['order_id'].unique()
+    filtered_reviews_df = filtered_reviews_df[filtered_reviews_df['order_id'].isin(
+        filtered_order_ids)]
+    filtered_orders_df = filtered_orders_df[filtered_orders_df['order_id'].isin(
+        filtered_order_ids)]
+
 # --- Pertanyaan Bisnis 1: Siapa Pelanggan Kita? ---
 st.header("1. Siapa Pelanggan Kita? 👥")
 st.info("""
@@ -42,7 +88,7 @@ Untuk mengetahui siapa pelanggan kita, kita akan menganalisis distribusi demogra
 """)
 
 # Pre-calculate data for customer analysis (from your EDA)
-customer_summary = full_orders_df.groupby('customer_unique_id').agg(
+customer_summary = filtered_orders_df.groupby('customer_unique_id').agg(
     total_orders=('order_id', 'nunique'),
     total_spend=('total_order_spend', 'sum'),
     customer_state=('customer_state', 'first'),
@@ -146,7 +192,7 @@ Kita akan melihat kategori produk apa yang paling populer (berdasarkan jumlah pe
 """)
 
 # Pre-calculate data for product analysis (from your EDA)
-category_performance = full_products_df.groupby('product_category_name_english').agg(
+category_performance = filtered_products_df.groupby('product_category_name_english').agg(
     num_orders=('order_id', 'nunique'),
     total_revenue=('item_total_price_with_freight', 'sum')
 ).reset_index()
@@ -203,9 +249,9 @@ st.write("⭐ **Distribusi Skor Ulasan Pelanggan:**")
 fig, ax = plt.subplots(figsize=(8, 5))
 sns.countplot(
     x='review_score',
-    data=full_reviews_df,
+    data=filtered_reviews_df,
     palette='Greens',
-    order=sorted(full_reviews_df['review_score'].unique()),
+    order=sorted(filtered_reviews_df['review_score'].unique()),
     ax=ax
 )
 ax.set_title('Distribusi Skor Ulasan Pelanggan')
@@ -214,7 +260,7 @@ ax.set_ylabel('Jumlah Ulasan')
 st.pyplot(fig)
 
 # Pre-calculate data for seller performance (from your EDA)
-seller_performance = full_reviews_df.groupby('seller_id').agg(
+seller_performance = filtered_reviews_df.groupby('seller_id').agg(
     average_review_score=('review_score', 'mean'),
     num_reviews=('review_score', 'count'),
     total_sales_value=('item_total_price_with_freight', 'sum')
